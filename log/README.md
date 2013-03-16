@@ -25,8 +25,8 @@ Usage
 
 To utilize the log levels, add the following to your `import` statement:
 
-  "github.com/inhies/go-utils/log"
-  _ "log"
+    "github.com/inhies/go-utils/log"
+    _ "log"
 
 Then initialize your logger with something like 
 `l, err := log.NewLevel(log.ERR,true, os.Stdout, "", log.Ltime)` which will log all 
