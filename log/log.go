@@ -28,15 +28,6 @@ type Logger struct {
 }
 
 var (
-	EMERG   LogLevel = 0
-	ALERT   LogLevel = 1
-	CRIT    LogLevel = 2
-	ERR     LogLevel = 3
-	WARNING LogLevel = 4
-	NOTICE  LogLevel = 5
-	INFO    LogLevel = 6
-	DEBUG   LogLevel = 7
-
 	LevelNames = [8]string{
 		"EMERG",
 		"ALERT",
@@ -50,21 +41,30 @@ var (
 )
 
 const (
-  // Imported from Golang log package:
+	EMERG = iota
+	ALERT
+	CRIT
+	ERR
+	WARNING
+	NOTICE
+	INFO
+	DEBUG
+
+	// Imported from Golang log package:
 	// Bits or'ed together to control what's printed. There is no control over the
 	// order they appear (the order listed here) or the format they present (as
 	// described in the comments).  A colon appears after these items:
 	//	2009/01/23 01:23:23.123123 /a/b/c/d.go:23: message
-	Ldate         = log.Ldate             // the date: 2009/01/23
-	Ltime         = log.Ltime             // the time: 01:23:23
-	Lmicroseconds = log.Lmicroseconds     // microsecond resolution: 01:23:23.123123.  assumes Ltime.
-	Llongfile     = log.Llongfile         // full file name and line number: /a/b/c/d.go:23
-	Lshortfile    = log.Lshortfile        // final file name element and line number: d.go:23. overrides Llongfile
-	LstdFlags     = log.Ldate | log.Ltime // initial values for the standard logger
+	Ldate         = log.Ldate         // the date: 2009/01/23
+	Ltime         = log.Ltime         // the time: 01:23:23
+	Lmicroseconds = log.Lmicroseconds // microsecond resolution: 01:23:23.123123.  assumes Ltime.
+	Llongfile     = log.Llongfile     // full file name and line number: /a/b/c/d.go:23
+	Lshortfile    = log.Lshortfile    // final file name element and line number: d.go:23. overrides Llongfile
+	LstdFlags     = log.LstdFlags     // initial values for the standard logger
 )
 
 func lookup(input int) (word string) {
-	if input > 7 || input < 0 {
+	if input > len(LevelNames)-1 || input < 0 {
 		return "INVALID"
 	}
 
@@ -75,7 +75,7 @@ func (v LogLevel) String() string {
 	return lookup(int(v))
 }
 
-func (v LogLevel) Int() int {
+func (v LogLevel) int() int {
 	return int(v)
 }
 
@@ -88,7 +88,7 @@ func New(out io.Writer, prefix string, flag int) (newLogger *Logger) {
 
 // Create a new logger with the specified level
 func NewLevel(level LogLevel, inc bool, out io.Writer, prefix string, flag int) (newLogger *Logger, err error) {
-	if level > DEBUG {
+	if int(level) > len(LevelNames) -1 {
 		err = fmt.Errorf("Invalid log level specified")
 		return
 	}
@@ -102,7 +102,7 @@ func NewLevel(level LogLevel, inc bool, out io.Writer, prefix string, flag int) 
 func ParseLevel(input interface{}) (level LogLevel, err error) {
 	switch t := input.(type) {
 	case string:
-		for i := 0; i <= len(LevelNames); i++ {
+		for i := 0; i < len(LevelNames); i++ {
 			if LevelNames[i] == strings.ToUpper(t) {
 				level = LogLevel(i)
 				return
@@ -112,13 +112,13 @@ func ParseLevel(input interface{}) (level LogLevel, err error) {
 		return
 
 	case float64:
-		if t > float64(DEBUG) || t < float64(EMERG) {
+		if t > float64(len(LevelNames)-1) || t < float64(0) {
 			err = fmt.Errorf("Unknown log level specified")
 			return
 		}
 		level = LogLevel(t)
 	case int:
-		if t > DEBUG.Int() {
+		if t > DEBUG {
 			err = fmt.Errorf("Unknown log level specified")
 			return
 		}
