@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -88,7 +89,7 @@ func New(out io.Writer, prefix string, flag int) (newLogger *Logger) {
 
 // Create a new logger with the specified level
 func NewLevel(level LogLevel, inc bool, out io.Writer, prefix string, flag int) (newLogger *Logger, err error) {
-	if int(level) > len(LevelNames) -1 {
+	if int(level) > len(LevelNames)-1 {
 		err = fmt.Errorf("Invalid log level specified")
 		return
 	}
@@ -139,7 +140,7 @@ func (logger *Logger) MyOutput(level LogLevel, msg string) {
 	}
 
 	if logger.IncludeLevel {
-		msg = logger.Level.String() + " " + msg
+		msg = level.String() + " " + msg
 	}
 	logger.Output(3, msg)
 }
@@ -178,6 +179,17 @@ func (logger *Logger) Emerg(v ...interface{}) {
 	logger.MyOutput(EMERG, fmt.Sprint(v...))
 }
 
+func (logger *Logger) Fatal(v ...interface{}) {
+	logger.MyOutput(EMERG, fmt.Sprint(v...))
+	os.Exit(1)
+}
+
+func (logger *Logger) Panic(v ...interface{}) {
+	s := fmt.Sprint(v...)
+	logger.MyOutput(EMERG, s)
+	panic(s)
+}
+
 // Println style
 
 func (logger *Logger) Debugln(v ...interface{}) {
@@ -212,6 +224,17 @@ func (logger *Logger) Emergln(v ...interface{}) {
 	logger.MyOutput(EMERG, fmt.Sprintln(v...))
 }
 
+func (logger *Logger) Fatalln(v ...interface{}) {
+	logger.MyOutput(EMERG, fmt.Sprintln(v...))
+	os.Exit(1)
+}
+
+func (logger *Logger) Panicln(v ...interface{}) {
+	s := fmt.Sprintln(v...)
+	logger.MyOutput(EMERG, s)
+	panic(s)
+}
+
 // Printf style
 
 func (logger *Logger) Debugf(format string, v ...interface{}) {
@@ -244,4 +267,15 @@ func (logger *Logger) Alertf(format string, v ...interface{}) {
 
 func (logger *Logger) Emergf(format string, v ...interface{}) {
 	logger.MyOutput(EMERG, fmt.Sprintf(format, v...))
+}
+
+func (logger *Logger) Fatalf(format string, v ...interface{}) {
+	logger.MyOutput(EMERG, fmt.Sprintf(format, v...))
+	os.Exit(1)
+}
+
+func (logger *Logger) Panicf(format string, v ...interface{}) {
+	s := fmt.Sprintf(format, v...)
+	logger.MyOutput(EMERG, s)
+	panic(s)
 }
