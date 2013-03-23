@@ -76,7 +76,7 @@ func (v LogLevel) String() string {
 	return lookup(int(v))
 }
 
-func (v LogLevel) int() int {
+func (v LogLevel) Int() int {
 	return int(v)
 }
 
