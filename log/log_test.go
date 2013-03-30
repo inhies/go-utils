@@ -76,6 +76,6 @@ func TestString(t *testing.T) {
 	}
 	l.PrefixOutput(LogLeveL(maxLevel+1), "")
 	if !strings.Contains(string(w.LastWrite), "INVALID") {
-		t.Error("INvalid log level resulted in non-INVALID prefix")
+		t.Error("Invalid log level resulted in non-INVALID prefix")
 	}
 }
