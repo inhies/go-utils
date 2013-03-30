@@ -75,11 +75,12 @@ var (
 )
 
 func (v LogLevel) String() string {
-	// If v is in bounds, look up the string. Otherwise, return "INVALID".
+	// If v is out of bounds, return INVALID. Otherwise, look up the
+	// string.
 	if v.Int() < 0 || v.Int() > maxLevel {
-		return LevelNames[v]
+		return "INVALID"
 	}
-	return "INVALID"
+	return LevelNames[v]
 }
 
 func (v LogLevel) Int() int {
