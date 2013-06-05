@@ -7,6 +7,7 @@ package log
 // TODO(inhies): Implement the log.Fatal functions
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -39,10 +40,15 @@ var (
 		"INFO",
 		"DEBUG",
 	}
+
+	// maxLevel is the greatest valid LogLevel; anything strictly greater than
+	// maxLevel is out of bounds.
+	maxLevel = len(LevelNames) - 1
 )
 
 const (
-	EMERG = iota
+	NULL  = iota - 1 // NULL will be -1, so that it discards all output.
+	EMERG            // EMERGE will be 0, and so on.
 	ALERT
 	CRIT
 	ERR
@@ -64,218 +70,221 @@ const (
 	LstdFlags     = log.LstdFlags     // initial values for the standard logger
 )
 
-func lookup(input int) (word string) {
-	if input > len(LevelNames)-1 || input < 0 {
-		return "INVALID"
-	}
-
-	return LevelNames[input]
-}
+var (
+	InvalidLogLevelError = errors.New("log level invalid or out of bounds")
+)
 
 func (v LogLevel) String() string {
-	return lookup(int(v))
+	// If v is out of bounds, return INVALID. Otherwise, look up the
+	// string.
+	if v.Int() < 0 || v.Int() > maxLevel {
+		return "INVALID"
+	}
+	return LevelNames[v]
 }
 
 func (v LogLevel) Int() int {
 	return int(v)
 }
 
-// Create a new logger with DEBUG as the default level. This is for backwards compatibility
-// with exisiting code not utilizing go-utils/log
+// Create a new logger with DEBUG as the default level. This is for backwards
+// compatibility with exisiting code not utilizing go-utils/log
 func New(out io.Writer, prefix string, flag int) (newLogger *Logger) {
-	newLogger = &Logger{DEBUG, false, *log.New(out, prefix, flag)}
-	return
+	// Note that the false prevents the log from printing the urgency prefix, so
+	// that it behaves exactly like stdlib logs.
+	return &Logger{DEBUG, false, *log.New(out, prefix, flag)}
 }
 
 // Create a new logger with the specified level
 func NewLevel(level LogLevel, inc bool, out io.Writer, prefix string, flag int) (newLogger *Logger, err error) {
-	if int(level) > len(LevelNames)-1 {
-		err = fmt.Errorf("Invalid log level specified")
-		return
+
+	if level.Int() > maxLevel {
+		return nil, InvalidLogLevelError
 	}
 
 	newLogger = &Logger{level, inc, *log.New(out, prefix, flag)}
 	return
 }
 
-// Accepts a string with the level name or an int corresponding to the level and returns the
-// correct level.
+// Accepts a string with the level name or an int corresponding to the level and
+// returns the correct level.
 func ParseLevel(input interface{}) (level LogLevel, err error) {
+	n := NULL // Let NULL be the default.
 	switch t := input.(type) {
 	case string:
-		for i := 0; i < len(LevelNames); i++ {
-			if LevelNames[i] == strings.ToUpper(t) {
-				level = LogLevel(i)
-				return
+		// If the input is a string, then check if it matches any of the
+		// LevelNames.
+		tu := strings.ToUpper(t)
+		for i, name := range LevelNames {
+			if name == tu {
+				return LogLevel(i), nil
 			}
 		}
-		err = fmt.Errorf("Unknown log level specified")
-		return
-
+		// If it doesn't match, then return NULL and an error.
+		return NULL, InvalidLogLevelError
 	case float64:
-		if t > float64(len(LevelNames)-1) || t < float64(0) {
-			err = fmt.Errorf("Unknown log level specified")
-			return
+		// If t is out of bounds, then set the error and let the function return
+		// as normal.
+		if t > float64(maxLevel) || t < float64(0) {
+			err = InvalidLogLevelError
 		}
-		level = LogLevel(t)
+		n = int(t)
 	case int:
-		if t > DEBUG {
-			err = fmt.Errorf("Unknown log level specified")
-			return
+		// As above, if t is out of bounds, set the error and return as normal.
+		if t > maxLevel || t < 0 {
+			err = InvalidLogLevelError
 		}
-		level = LogLevel(t)
-	default:
-		err = fmt.Errorf("Unknown log level specified")
-		return
+		n = t
 	}
-
-	return
+	return LogLevel(n), err
 }
 
-// Custom output function to enforce log levels before forwarding the message 
-// to the log package
-func (logger *Logger) MyOutput(level LogLevel, msg string) {
+// prefixOutput obeys advanced logging rules and prepends prefixes before
+// passing the final message to logger.Output().
+func (logger *Logger) prefixOutput(level LogLevel, msg string) {
 	if level > logger.Level {
 		return
 	}
 
 	if logger.IncludeLevel {
-		msg = level.String() + " " + msg
+		// If we should include the level, prepend it.
+		logger.Output(3, level.String()+" "+msg)
+	} else { // Otherwise, give the message without any modifications.
+		logger.Output(3, msg)
 	}
-	logger.Output(3, msg)
 }
 
-// Print style
+// Print() style
 
 func (logger *Logger) Debug(v ...interface{}) {
-	logger.MyOutput(DEBUG, fmt.Sprint(v...))
+	logger.prefixOutput(DEBUG, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Info(v ...interface{}) {
-	logger.MyOutput(INFO, fmt.Sprint(v...))
+	logger.prefixOutput(INFO, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Notice(v ...interface{}) {
-	logger.MyOutput(NOTICE, fmt.Sprint(v...))
+	logger.prefixOutput(NOTICE, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Warning(v ...interface{}) {
-	logger.MyOutput(WARNING, fmt.Sprint(v...))
+	logger.prefixOutput(WARNING, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Err(v ...interface{}) {
-	logger.MyOutput(ERR, fmt.Sprint(v...))
+	logger.prefixOutput(ERR, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Crit(v ...interface{}) {
-	logger.MyOutput(CRIT, fmt.Sprint(v...))
+	logger.prefixOutput(CRIT, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Alert(v ...interface{}) {
-	logger.MyOutput(ALERT, fmt.Sprint(v...))
+	logger.prefixOutput(ALERT, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Emerg(v ...interface{}) {
-	logger.MyOutput(EMERG, fmt.Sprint(v...))
+	logger.prefixOutput(EMERG, fmt.Sprint(v...))
 }
 
 func (logger *Logger) Fatal(v ...interface{}) {
-	logger.MyOutput(EMERG, fmt.Sprint(v...))
+	logger.prefixOutput(EMERG, fmt.Sprint(v...))
 	os.Exit(1)
 }
 
 func (logger *Logger) Panic(v ...interface{}) {
 	s := fmt.Sprint(v...)
-	logger.MyOutput(EMERG, s)
+	logger.prefixOutput(EMERG, s)
 	panic(s)
 }
 
-// Println style
+// Println() style
 
 func (logger *Logger) Debugln(v ...interface{}) {
-	logger.MyOutput(DEBUG, fmt.Sprintln(v...))
+	logger.prefixOutput(DEBUG, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Infoln(v ...interface{}) {
-	logger.MyOutput(INFO, fmt.Sprintln(v...))
+	logger.prefixOutput(INFO, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Noticeln(v ...interface{}) {
-	logger.MyOutput(NOTICE, fmt.Sprintln(v...))
+	logger.prefixOutput(NOTICE, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Warningln(v ...interface{}) {
-	logger.MyOutput(WARNING, fmt.Sprintln(v...))
+	logger.prefixOutput(WARNING, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Errln(v ...interface{}) {
-	logger.MyOutput(ERR, fmt.Sprintln(v...))
+	logger.prefixOutput(ERR, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Critln(v ...interface{}) {
-	logger.MyOutput(CRIT, fmt.Sprintln(v...))
+	logger.prefixOutput(CRIT, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Alertln(v ...interface{}) {
-	logger.MyOutput(ALERT, fmt.Sprintln(v...))
+	logger.prefixOutput(ALERT, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Emergln(v ...interface{}) {
-	logger.MyOutput(EMERG, fmt.Sprintln(v...))
+	logger.prefixOutput(EMERG, fmt.Sprintln(v...))
 }
 
 func (logger *Logger) Fatalln(v ...interface{}) {
-	logger.MyOutput(EMERG, fmt.Sprintln(v...))
+	logger.prefixOutput(EMERG, fmt.Sprintln(v...))
 	os.Exit(1)
 }
 
 func (logger *Logger) Panicln(v ...interface{}) {
 	s := fmt.Sprintln(v...)
-	logger.MyOutput(EMERG, s)
+	logger.prefixOutput(EMERG, s)
 	panic(s)
 }
 
-// Printf style
+// Printf() style
 
 func (logger *Logger) Debugf(format string, v ...interface{}) {
-	logger.MyOutput(DEBUG, fmt.Sprintf(format, v...))
+	logger.prefixOutput(DEBUG, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Infof(format string, v ...interface{}) {
-	logger.MyOutput(INFO, fmt.Sprintf(format, v...))
+	logger.prefixOutput(INFO, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Noticef(format string, v ...interface{}) {
-	logger.MyOutput(NOTICE, fmt.Sprintf(format, v...))
+	logger.prefixOutput(NOTICE, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Warningf(format string, v ...interface{}) {
-	logger.MyOutput(WARNING, fmt.Sprintf(format, v...))
+	logger.prefixOutput(WARNING, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Errf(format string, v ...interface{}) {
-	logger.MyOutput(ERR, fmt.Sprintf(format, v...))
+	logger.prefixOutput(ERR, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Critf(format string, v ...interface{}) {
-	logger.MyOutput(CRIT, fmt.Sprintf(format, v...))
+	logger.prefixOutput(CRIT, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Alertf(format string, v ...interface{}) {
-	logger.MyOutput(ALERT, fmt.Sprintf(format, v...))
+	logger.prefixOutput(ALERT, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Emergf(format string, v ...interface{}) {
-	logger.MyOutput(EMERG, fmt.Sprintf(format, v...))
+	logger.prefixOutput(EMERG, fmt.Sprintf(format, v...))
 }
 
 func (logger *Logger) Fatalf(format string, v ...interface{}) {
-	logger.MyOutput(EMERG, fmt.Sprintf(format, v...))
+	logger.prefixOutput(EMERG, fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
 
 func (logger *Logger) Panicf(format string, v ...interface{}) {
 	s := fmt.Sprintf(format, v...)
-	logger.MyOutput(EMERG, s)
+	logger.prefixOutput(EMERG, s)
 	panic(s)
 }
