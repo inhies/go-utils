@@ -16,8 +16,8 @@ func (w *FakeWriter) Check() bool {
 	return status
 }
 
-// Implents io.Writer and simply sets a boolean as to whether or not we were 
-// called so we can verify our filtering of lower log levels works. 
+// Implents io.Writer and simply sets a boolean as to whether or not we were
+// called so we can verify our filtering of lower log levels works.
 func (w *FakeWriter) Write(p []byte) (n int, err error) {
 	w.WasUsed = true
 	return
@@ -70,11 +70,11 @@ func TestString(t *testing.T) {
 	}
 
 	// Check some invalid log levels.
-	l.PrefixOutput(LogLevel(-1), "")
+	l.prefixOutput(LogLevel(-1), "")
 	if !strings.Contains(string(w.LastWrite), "INVALID") {
 		t.Error("Invalid log level resulted in non-INVALID prefix")
 	}
-	l.PrefixOutput(LogLeveL(maxLevel+1), "")
+	l.prefixOutput(LogLevel(maxLevel+1), "")
 	if !strings.Contains(string(w.LastWrite), "INVALID") {
 		t.Error("Invalid log level resulted in non-INVALID prefix")
 	}
