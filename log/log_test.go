@@ -1,6 +1,7 @@
 package log
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -22,6 +23,15 @@ func (w *FakeWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
+type RecordWriter struct {
+	LastWrite []byte // The entire contents of the most recent Write()
+}
+
+func (w *RecordWriter) Write(p []byte) (n int, err error) {
+	w.LastWrite = p
+	return len(p), nil
+}
+
 // Cycles through all log levels and ensures that a lower level messages does
 // not get logged.
 func TestLevels(t *testing.T) {
@@ -34,11 +44,38 @@ func TestLevels(t *testing.T) {
 	for sysLevel = 0; sysLevel.Int() < len(LevelNames); sysLevel++ {
 		l.Level = sysLevel
 		for msgLevel = 0; msgLevel.Int() < len(LevelNames); msgLevel++ {
-			l.MyOutput(msgLevel, "Log this!")
+			l.prefixOutput(msgLevel, "Log this!")
 			if w.Check() && msgLevel.Int() > sysLevel.Int() {
 				t.Error("Logging set to:", sysLevel,
 					"but a message got through at level:", msgLevel)
 			}
 		}
+	}
+}
+
+// TestString checks that LogLevel.String() is functioning properly.
+func TestString(t *testing.T) {
+	w := &RecordWriter{}
+	l, err := NewLevel(EMERG, true, w, "", 0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Check all of the valid log levels.
+	for i := 0; i <= maxLevel; i++ {
+		l.prefixOutput(LogLevel(i), "")
+		if strings.Contains(string(w.LastWrite), "INVALID") {
+			t.Error("Got INVALID prefix for log level:", i)
+		}
+	}
+
+	// Check some invalid log levels.
+	l.PrefixOutput(LogLevel(-1), "")
+	if !strings.Contains(string(w.LastWrite), "INVALID") {
+		t.Error("Invalid log level resulted in non-INVALID prefix")
+	}
+	l.PrefixOutput(LogLeveL(maxLevel+1), "")
+	if !strings.Contains(string(w.LastWrite), "INVALID") {
+		t.Error("Invalid log level resulted in non-INVALID prefix")
 	}
 }
