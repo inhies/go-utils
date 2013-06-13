@@ -1,6 +1,7 @@
 package log
 
 import (
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -50,6 +51,59 @@ func TestLevels(t *testing.T) {
 					"but a message got through at level:", msgLevel)
 			}
 		}
+	}
+}
+
+func TestChannels(t *testing.T) {
+	w := ioutil.Discard
+	l, err := NewLevel(EMERG, true, w, "", Lshortfile|Ldate|Lmicroseconds)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// TODO(inhies): Check to make sure a race condition isn't possible with
+	// these go routines. I think it might be but I haven't been able to prove
+	// it.
+
+	// Make sure we only receive messages of the current level
+	lChan := make(chan Message)
+	go func() {
+		for {
+			msg := <-lChan
+			if msg.Level > l.Level {
+				t.Error("Logging set to:", l.Level,
+					"but a message got sent on channel at level:", msg.Level)
+			}
+		}
+	}()
+
+	// Make sure we receive all messages
+	aChan := make(chan Message)
+	var msgsRecvd int
+	go func() {
+		for {
+			_ = <-aChan
+			msgsRecvd++
+		}
+	}()
+
+	// Register our channels to receive the log messages
+	l.Split(aChan, true)  // Send all messages
+	l.Split(lChan, false) // Send only messages >= l.Leve
+
+	var sysLevel, msgLevel LogLevel
+	var count int
+	for sysLevel = 0; sysLevel.Int() < len(LevelNames); sysLevel++ {
+		l.Level = sysLevel
+		for msgLevel = 0; msgLevel.Int() < len(LevelNames); msgLevel++ {
+			l.prefixOutput(msgLevel, "Log this!")
+			count++
+		}
+	}
+
+	// Make sure that all messages were sent to aChan
+	if count != msgsRecvd {
+		t.Error("We sent", count, "messages but received", msgsRecvd)
 	}
 }
 

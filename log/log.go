@@ -1,10 +1,7 @@
-// Package log allows the use of BSD style log levels with the standard Go 'log' package
-// This allows you to be gracious with your use of log statements during development
-// and then set the log level higher during production for less noise.
+// Package log allows the use of BSD style log levels which allows you to be
+// gracious with your use of log statements during development and then set the
+// log level higher during production for less noise.
 package log
-
-// TODO(inhies): Implement table based test for this. 
-// TODO(inhies): Implement the log.Fatal functions
 
 import (
 	"errors"
@@ -13,22 +10,53 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
+// Package version
 const (
-	Version = "1.4"
+	Version = "1.5"
 )
 
+// LogLevel represents the minimum level of messages we want to process.
 type LogLevel int
 
-// Implements the standard log.Logger as well as tracks what log 
-// level we currently want to use
+// Implements the standard log.Logger as well as tracks what log level we
+// currently want to use.
 type Logger struct {
-	Level        LogLevel
+	// The lowest level of messages the logger will output
+	Level LogLevel
+
+	// Include the message level in logger output
 	IncludeLevel bool
+
+	// Timeout for writing log messages to a channel
+	Timeout time.Duration
+
+	// Contains the number of messages that failed to send on channels due to
+	// timeouts
+	MissedMessages int
+
+	// Slice containing channels that will only receive messages of Level and
+	// higher
+	levelChannels []chan Message
+
+	// Slice containing channels that will receive all messages, regardless of
+	// Level
+	allChannels []chan Message
+
+	// Standard Go log fields
 	log.Logger
 }
 
+// Message represents a single log message
+type Message struct {
+	Level     LogLevel  // The level of the message
+	Message   string    // The content of the message, represented as a string
+	Timestamp time.Time // Timestamp of when the message was received
+}
+
+// String values for each of the log levels
 var (
 	LevelNames = [8]string{
 		"EMERG",
@@ -40,12 +68,15 @@ var (
 		"INFO",
 		"DEBUG",
 	}
+)
 
+var (
 	// maxLevel is the greatest valid LogLevel; anything strictly greater than
 	// maxLevel is out of bounds.
 	maxLevel = len(LevelNames) - 1
 )
 
+// Package values for each log level
 const (
 	NULL  = iota - 1 // NULL will be -1, so that it discards all output.
 	EMERG            // EMERGE will be 0, and so on.
@@ -70,6 +101,7 @@ const (
 	LstdFlags     = log.LstdFlags     // initial values for the standard logger
 )
 
+// Common error messages.
 var (
 	InvalidLogLevelError = errors.New("log level invalid or out of bounds")
 )
@@ -88,21 +120,21 @@ func (v LogLevel) Int() int {
 }
 
 // Create a new logger with DEBUG as the default level. This is for backwards
-// compatibility with exisiting code not utilizing go-utils/log
+// compatibility with exisiting code not utilizing go-log.
 func New(out io.Writer, prefix string, flag int) (newLogger *Logger) {
 	// Note that the false prevents the log from printing the urgency prefix, so
 	// that it behaves exactly like stdlib logs.
-	return &Logger{DEBUG, false, *log.New(out, prefix, flag)}
+	return &Logger{DEBUG, false, 1 * time.Second, 0, nil, nil, *log.New(out, prefix, flag)}
 }
 
-// Create a new logger with the specified level
+// Create a new logger with the specified level.
 func NewLevel(level LogLevel, inc bool, out io.Writer, prefix string, flag int) (newLogger *Logger, err error) {
 
 	if level.Int() > maxLevel {
 		return nil, InvalidLogLevelError
 	}
 
-	newLogger = &Logger{level, inc, *log.New(out, prefix, flag)}
+	newLogger = &Logger{level, inc, 1 * time.Second, 0, nil, nil, *log.New(out, prefix, flag)}
 	return
 }
 
@@ -139,11 +171,41 @@ func ParseLevel(input interface{}) (level LogLevel, err error) {
 	return LogLevel(n), err
 }
 
+// Split accepts a channel that will receive log messages in addition to them
+// being sent to the logger's io.Writer. If sendAll is true then all messages,
+// regardless of the configured logging level, will be sent to the channel.
+func (logger *Logger) Split(c chan Message, sendAll bool) {
+	if sendAll {
+		logger.allChannels = append(logger.allChannels, c)
+	} else {
+		logger.levelChannels = append(logger.levelChannels, c)
+	}
+}
+
 // prefixOutput obeys advanced logging rules and prepends prefixes before
 // passing the final message to logger.Output().
 func (logger *Logger) prefixOutput(level LogLevel, msg string) {
+	// Send the message to channels that want all messages
+	for _, c := range logger.allChannels {
+		select {
+		case c <- Message{level, msg, time.Now()}:
+		case <-time.After(logger.Timeout):
+			logger.MissedMessages++
+		}
+	}
+
+	// Return if the message level isn't high enough
 	if level > logger.Level {
 		return
+	}
+
+	// Send the message to channels that only want messages of certain levels
+	for _, c := range logger.levelChannels {
+		select {
+		case c <- Message{level, msg, time.Now()}:
+		case <-time.After(logger.Timeout):
+			logger.MissedMessages++
+		}
 	}
 
 	if logger.IncludeLevel {
@@ -153,8 +215,6 @@ func (logger *Logger) prefixOutput(level LogLevel, msg string) {
 		logger.Output(3, msg)
 	}
 }
-
-// Print() style
 
 func (logger *Logger) Debug(v ...interface{}) {
 	logger.prefixOutput(DEBUG, fmt.Sprint(v...))
@@ -199,8 +259,6 @@ func (logger *Logger) Panic(v ...interface{}) {
 	panic(s)
 }
 
-// Println() style
-
 func (logger *Logger) Debugln(v ...interface{}) {
 	logger.prefixOutput(DEBUG, fmt.Sprintln(v...))
 }
@@ -243,8 +301,6 @@ func (logger *Logger) Panicln(v ...interface{}) {
 	logger.prefixOutput(EMERG, s)
 	panic(s)
 }
-
-// Printf() style
 
 func (logger *Logger) Debugf(format string, v ...interface{}) {
 	logger.prefixOutput(DEBUG, fmt.Sprintf(format, v...))
