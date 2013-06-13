@@ -4,6 +4,15 @@ MOVED
 The `go-utils/log` subpackage has been moved to `github.com/inhies/go-log`. 
 Please update your imports and I apologize for the inconvenience.
 
+Misc Package
+------------
+
+The misc package contains small functions that might be useful in your programs.
+It currently features:
+
+* `ByteSize` which can be used for converting the size of bytes from a float64
+  to a string with standard IEC symbol appended.
+
 Note
 ----
 
